@@ -173,6 +173,8 @@ class Thread implements Runnable {
 
     /* For autonumbering anonymous threads. */
     private static int threadInitNumber;
+    // 用作匿名线程的命名。Thread-11111这样的
+    // 加了锁的，所以不会有线程安全问题。
     private static synchronized int nextThreadNum() {
         return threadInitNumber++;
     }
@@ -192,7 +194,7 @@ class Thread implements Runnable {
      * not specify a stack size.  It is up to the VM to do whatever it
      * likes with this number; some VMs will ignore it.
      */
-    private long stackSize;
+    private long stackSize;// 栈深。具体有什么作用还得看虚拟机，虚拟机可能并不会用到
 
     /*
      * JVM-private state that persists after native thread termination.
@@ -224,7 +226,7 @@ class Thread implements Runnable {
      * Set by (private) java.util.concurrent.locks.LockSupport.setBlocker
      * Accessed using java.util.concurrent.locks.LockSupport.getBlocker
      */
-    volatile Object parkBlocker;
+    volatile Object parkBlocker;// 表示线程阻塞在哪个对象上
 
     /* The object in which this thread is blocked in an interruptible I/O
      * operation, if any.  The blocker's interrupt method should be invoked
