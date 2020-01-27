@@ -1,141 +1,81 @@
-/*
- * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- */
-
-/*
- *
- *
- *
- *
- *
- * Written by Doug Lea with assistance from members of JCP JSR-166
- * Expert Group and released to the public domain, as explained at
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
-
 package java.util.concurrent;
 
+
 /**
- * An object that executes submitted {@link Runnable} tasks. This
- * interface provides a way of decoupling task submission from the
- * mechanics of how each task will be run, including details of thread
- * use, scheduling, etc.  An {@code Executor} is normally used
- * instead of explicitly creating threads. For example, rather than
- * invoking {@code new Thread(new(RunnableTask())).start()} for each
- * of a set of tasks, you might use:
- *
- * <pre>
- * Executor executor = <em>anExecutor</em>;
+ * 该对象用来执行所提交的任务。这个接口提供了一种将任务提交与任务的具体运行机制（包括线程的使用细节、调度等）分离开来的途径
+ * 一个Executor对象通用来替代明确的线程创建，比如说，不用对一批任务中的每个任务调用new Thread(new(RunnableTask())).start()
+ * 你可以这样做：
+ * Executor executor = anExecutor;
  * executor.execute(new RunnableTask1());
  * executor.execute(new RunnableTask2());
- * ...
- * </pre>
  *
- * However, the {@code Executor} interface does not strictly
- * require that execution be asynchronous. In the simplest case, an
- * executor can run the submitted task immediately in the caller's
- * thread:
+ * 然而，该接口不严格要求任务的执行是异步的。在最简单的例子中，一个executor可以在调用线程中立即执行提交的任务
+ * 看代码中的<DirectExecutor>
  *
- *  <pre> {@code
- * class DirectExecutor implements Executor {
- *   public void execute(Runnable r) {
- *     r.run();
- *   }
- * }}</pre>
+ * 更多的时候，任务会在新线程中执行，而不是在调用线程中。下面这个executor为每一个人物创建了一个线程
+ * 看代码中的<ThreadPerTaskExecutor>
  *
- * More typically, tasks are executed in some thread other
- * than the caller's thread.  The executor below spawns a new thread
- * for each task.
+ * 许多Executor的实现都对任务的创建以及调度施加了一些限制
+ * 下面这个executor将一批任务交给另一个executor去串行执行，
+ * 看代码中的<SerialExecutor>
  *
- *  <pre> {@code
- * class ThreadPerTaskExecutor implements Executor {
- *   public void execute(Runnable r) {
- *     new Thread(r).start();
- *   }
- * }}</pre>
+ * 这个包中的Executor实现也都实现了<ExecutorService>，它是一个更具有扩展性的接口
+ * <ThreadPoolExecutor>提供了一个可扩展的线程池实现
+ * <Executors>提供了一些方便的工厂方法
  *
- * Many {@code Executor} implementations impose some sort of
- * limitation on how and when tasks are scheduled.  The executor below
- * serializes the submission of tasks to a second executor,
- * illustrating a composite executor.
- *
- *  <pre> {@code
- * class SerialExecutor implements Executor {
- *   final Queue<Runnable> tasks = new ArrayDeque<Runnable>();
- *   final Executor executor;
- *   Runnable active;
- *
- *   SerialExecutor(Executor executor) {
- *     this.executor = executor;
- *   }
- *
- *   public synchronized void execute(final Runnable r) {
- *     tasks.offer(new Runnable() {
- *       public void run() {
- *         try {
- *           r.run();
- *         } finally {
- *           scheduleNext();
- *         }
- *       }
- *     });
- *     if (active == null) {
- *       scheduleNext();
- *     }
- *   }
- *
- *   protected synchronized void scheduleNext() {
- *     if ((active = tasks.poll()) != null) {
- *       executor.execute(active);
- *     }
- *   }
- * }}</pre>
- *
- * The {@code Executor} implementations provided in this package
- * implement {@link ExecutorService}, which is a more extensive
- * interface.  The {@link ThreadPoolExecutor} class provides an
- * extensible thread pool implementation. The {@link Executors} class
- * provides convenient factory methods for these Executors.
- *
- * <p>Memory consistency effects: Actions in a thread prior to
- * submitting a {@code Runnable} object to an {@code Executor}
- * <a href="package-summary.html#MemoryVisibility"><i>happen-before</i></a>
- * its execution begins, perhaps in another thread.
- *
- * @since 1.5
- * @author Doug Lea
+ * 内存一致性的影响：一个线程中的行为要先于 提交一个Runnable对象到一个Executor，这个Runnable的执行可能在另一个线程中
  */
 public interface Executor {
 
     /**
-     * Executes the given command at some time in the future.  The command
-     * may execute in a new thread, in a pooled thread, or in the calling
-     * thread, at the discretion of the {@code Executor} implementation.
-     *
-     * @param command the runnable task
-     * @throws RejectedExecutionException if this task cannot be
-     * accepted for execution
-     * @throws NullPointerException if command is null
+     * 在未来某个时间点执行给定的命令。
+     * 命令的执行线程可能是新线程，可能是线程池中的线程，也可能是方法的调用线程，这取决于具体的实现类
+     * 如果command为null，则会抛出空指针异常
      */
     void execute(Runnable command);
+
+
 }
+
+class DirectExecutor implements Executor {
+    public void execute(Runnable r) {
+        r.run();
+    }
+}}
+
+class ThreadPerTaskExecutor implements Executor {
+    public void execute(Runnable r) {
+        new Thread(r).start();
+    }
+}}
+
+class SerialExecutor implements Executor {
+    final Queue<Runnable> tasks = new ArrayDeque<Runnable>();
+    final Executor executor;
+    Runnable active;
+
+    SerialExecutor(Executor executor) {
+        this.executor = executor;
+    }
+
+    public synchronized void execute(final Runnable r) {
+        tasks.offer(new Runnable() {
+            public void run() {
+                try {
+                    r.run();
+                } finally {
+                    scheduleNext();
+                }
+            }
+        });
+        if (active == null) {
+            scheduleNext();
+        }
+    }
+
+    protected synchronized void scheduleNext() {
+        if ((active = tasks.poll()) != null) {
+            executor.execute(active);
+        }
+    }
+}}

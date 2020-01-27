@@ -1,42 +1,10 @@
-/*
- * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- */
-
-/*
- *
- *
- *
- *
- *
- * Written by Doug Lea with assistance from members of JCP JSR-166
- * Expert Group and released to the public domain, as explained at
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
 
 package java.util.concurrent;
 import java.util.*;
 
 /**
+ * 提供了ExecutorService的execution方法的默认实现。
+ * 该类用一个newTaskFor方法返回的RunnableFuture实现了本包中FutureTask的的默认submit、invokeAny和invokeAll方法，
  * Provides default implementations of {@link ExecutorService}
  * execution methods. This class implements the {@code submit},
  * {@code invokeAny} and {@code invokeAll} methods using a

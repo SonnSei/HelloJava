@@ -1,168 +1,58 @@
-/*
- * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- */
-
-/*
- *
- *
- *
- *
- *
- * Written by Doug Lea with assistance from members of JCP JSR-166
- * Expert Group and released to the public domain, as explained at
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
-
 package java.util.concurrent;
 
 /**
- * A {@code Future} represents the result of an asynchronous
- * computation.  Methods are provided to check if the computation is
- * complete, to wait for its completion, and to retrieve the result of
- * the computation.  The result can only be retrieved using method
- * {@code get} when the computation has completed, blocking if
- * necessary until it is ready.  Cancellation is performed by the
- * {@code cancel} method.  Additional methods are provided to
- * determine if the task completed normally or was cancelled. Once a
- * computation has completed, the computation cannot be cancelled.
- * If you would like to use a {@code Future} for the sake
- * of cancellability but not provide a usable result, you can
- * declare types of the form {@code Future<?>} and
- * return {@code null} as a result of the underlying task.
- *
- * <p>
- * <b>Sample Usage</b> (Note that the following classes are all
- * made-up.)
- * <pre> {@code
- * interface ArchiveSearcher { String search(String target); }
- * class App {
- *   ExecutorService executor = ...
- *   ArchiveSearcher searcher = ...
- *   void showSearch(final String target)
- *       throws InterruptedException {
- *     Future<String> future
- *       = executor.submit(new Callable<String>() {
- *         public String call() {
- *             return searcher.search(target);
- *         }});
- *     displayOtherThings(); // do other things while searching
- *     try {
- *       displayText(future.get()); // use future
- *     } catch (ExecutionException ex) { cleanup(); return; }
- *   }
- * }}</pre>
- *
- * The {@link FutureTask} class is an implementation of {@code Future} that
- * implements {@code Runnable}, and so may be executed by an {@code Executor}.
- * For example, the above construction with {@code submit} could be replaced by:
- *  <pre> {@code
- * FutureTask<String> future =
- *   new FutureTask<String>(new Callable<String>() {
- *     public String call() {
- *       return searcher.search(target);
- *   }});
- * executor.execute(future);}</pre>
- *
- * <p>Memory consistency effects: Actions taken by the asynchronous computation
- * <a href="package-summary.html#MemoryVisibility"> <i>happen-before</i></a>
- * actions following the corresponding {@code Future.get()} in another thread.
- *
- * @see FutureTask
- * @see Executor
- * @since 1.5
- * @author Doug Lea
- * @param <V> The result type returned by this Future's {@code get} method
+ * 代表一个异步计算的结果。包含的方法主要用来检查计算是否完成、等待计算完成以及获取计算结果
+ * 计算完成时候的结果只能通过get方法获取，该方法在必要的时候会阻塞，直到它准备好了
+ * cancel方法可以用来取消操作
+ * 一些附加的方法可以用来检查任务是否被正常执行完毕或取消
+ * 一旦一个计算已经结束，那这个计算就不能被取消
+ * 如果你只想用一个Future来检查任务是否是可以被取消的，但是却不关心结果，那么你可以把类型声明成Future<?>并且返回一个null当作任务的执行结果
  */
 public interface Future<V> {
 
     /**
-     * Attempts to cancel execution of this task.  This attempt will
-     * fail if the task has already completed, has already been cancelled,
-     * or could not be cancelled for some other reason. If successful,
-     * and this task has not started when {@code cancel} is called,
-     * this task should never run.  If the task has already started,
-     * then the {@code mayInterruptIfRunning} parameter determines
-     * whether the thread executing this task should be interrupted in
-     * an attempt to stop the task.
+     * 尝试取消一个任务。如果任务已经执行完成，或者任务已经被取消，或者当任务处于某些原因无法被删除时，会返回false，
+     * 如果任务尚未开始执行，并且又被成功取消了，那么这个任务将不会再运行
+     * 如果任务已经开始执行了，那么mayInterruptIfRunning参数将决定任务的执行线程是否应该中断以尝试取消任务
      *
-     * <p>After this method returns, subsequent calls to {@link #isDone} will
-     * always return {@code true}.  Subsequent calls to {@link #isCancelled}
-     * will always return {@code true} if this method returned {@code true}.
+     * 在这个方法执行完毕后，之后对isDone方法的调用都将返回true。
+     * 如果该方法返回true，那么之后对isCancelled方法的调用也将返回true
      *
-     * @param mayInterruptIfRunning {@code true} if the thread executing this
-     * task should be interrupted; otherwise, in-progress tasks are allowed
-     * to complete
-     * @return {@code false} if the task could not be cancelled,
-     * typically because it has already completed normally;
-     * {@code true} otherwise
+     * @param mayInterruptIfRunning 如果为true，那任务的执行线程就应该被中断，否则的话，执行中的任务将不会被删除
+     * @return 如果任务无法被删除，则返回false，通常是因为已经执行完毕了
      */
     boolean cancel(boolean mayInterruptIfRunning);
 
     /**
-     * Returns {@code true} if this task was cancelled before it completed
-     * normally.
-     *
-     * @return {@code true} if this task was cancelled before it completed
+     * @return 如果任务在正常结束前被取消了，则返回true
      */
     boolean isCancelled();
 
     /**
-     * Returns {@code true} if this task completed.
-     *
-     * Completion may be due to normal termination, an exception, or
-     * cancellation -- in all of these cases, this method will return
-     * {@code true}.
-     *
-     * @return {@code true} if this task completed
+     * 任务完成可能是因为正常的终止、异常或者一个删除行为，在这些情况下，该方法都会返回true
+     * @return 如果任务完成了就返回true
      */
     boolean isDone();
 
     /**
-     * Waits if necessary for the computation to complete, and then
-     * retrieves its result.
-     *
-     * @return the computed result
-     * @throws CancellationException if the computation was cancelled
-     * @throws ExecutionException if the computation threw an
-     * exception
-     * @throws InterruptedException if the current thread was interrupted
-     * while waiting
+     * 如果有必要的话会等待计算完成，然后获取结果
+     * @return 计算结果
+     * @throws CancellationException 如果任务被取消
+     * @throws ExecutionException 如果计算本身抛出一个异常
+     * @throws InterruptedException 如果当前线程在等待时被中断
      */
     V get() throws InterruptedException, ExecutionException;
 
     /**
-     * Waits if necessary for at most the given time for the computation
-     * to complete, and then retrieves its result, if available.
+     * 如果有必要的话，会等待计算完成，但是有最长等待时间限制，之后会试着获取计算结果
      *
-     * @param timeout the maximum time to wait
-     * @param unit the time unit of the timeout argument
-     * @return the computed result
-     * @throws CancellationException if the computation was cancelled
-     * @throws ExecutionException if the computation threw an
-     * exception
-     * @throws InterruptedException if the current thread was interrupted
-     * while waiting
-     * @throws TimeoutException if the wait timed out
+     * @param timeout 最长等待时间
+     * @param unit 时间单位
+     * @return 计算结果
+     * @throws CancellationException 如果任务被取消
+     * @throws ExecutionException 如果计算本身抛出一个异常
+     * @throws InterruptedException 如果当前线程在等待时被中断
+     * @throws TimeoutException 等待超时
      */
     V get(long timeout, TimeUnit unit)
         throws InterruptedException, ExecutionException, TimeoutException;

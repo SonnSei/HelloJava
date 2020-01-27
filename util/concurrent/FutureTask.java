@@ -1,64 +1,17 @@
-/*
- * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- */
-
-/*
- *
- *
- *
- *
- *
- * Written by Doug Lea with assistance from members of JCP JSR-166
- * Expert Group and released to the public domain, as explained at
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
-
 package java.util.concurrent;
 import java.util.concurrent.locks.LockSupport;
 
 /**
- * A cancellable asynchronous computation.  This class provides a base
- * implementation of {@link Future}, with methods to start and cancel
- * a computation, query to see if the computation is complete, and
- * retrieve the result of the computation.  The result can only be
- * retrieved when the computation has completed; the {@code get}
- * methods will block if the computation has not yet completed.  Once
- * the computation has completed, the computation cannot be restarted
- * or cancelled (unless the computation is invoked using
- * {@link #runAndReset}).
+ * 一个可以被取消的异步计算。该类提供了Future的一个基本实现，提供方法来start或cancel
+ * 一个计算，query以查看该计算是否已经完成，以及获取计算的结果。计算结果只有在计算完成
+ * 的时候才可以被获取；get方法在计算没有完成的时候会阻塞。一旦一个计算完成，那么这个计算
+ * 不能被重新启动或者取消，除非这个计算在启动的时候用的runAndReset方法
  *
- * <p>A {@code FutureTask} can be used to wrap a {@link Callable} or
- * {@link Runnable} object.  Because {@code FutureTask} implements
- * {@code Runnable}, a {@code FutureTask} can be submitted to an
- * {@link Executor} for execution.
+ * 一个FutureTask可以用来包装Callable或者Runnable对象。因为FutureTask实现类Runnable接口，
+ * 一个FutureTask对象可以提交到Executor去执行
  *
- * <p>In addition to serving as a standalone class, this class provides
- * {@code protected} functionality that may be useful when creating
- * customized task classes.
- *
- * @since 1.5
- * @author Doug Lea
- * @param <V> The result type returned by this FutureTask's {@code get} methods
+ * 为了作为一个独立的类来提供服务，该类提供了protected方法，这在创建一些个性化的task类时很有用
+ * @param <V> FutureTask的get方法的返回值类型
  */
 public class FutureTask<V> implements RunnableFuture<V> {
     /*
@@ -74,16 +27,11 @@ public class FutureTask<V> implements RunnableFuture<V> {
      */
 
     /**
-     * The run state of this task, initially NEW.  The run state
-     * transitions to a terminal state only in methods set,
-     * setException, and cancel.  During completion, state may take on
-     * transient values of COMPLETING (while outcome is being set) or
-     * INTERRUPTING (only while interrupting the runner to satisfy a
-     * cancel(true)). Transitions from these intermediate to final
-     * states use cheaper ordered/lazy writes because values are unique
-     * and cannot be further modified.
+     * task的运行状态，初始化时NEW，运行时状态只有在方法set、setException和cancel里能才能过渡到一个终点状态
+     * 在计算过程中，状态可能处于COMPLETING（正在设置计算结果）或者INTERRUPTING（只有在cancel方法需要中断时）
+     * 从这些中间状态到最终状态的过程使用代价更低的ordered/lazy writes，因为值是唯一的，而且之后也不能改
      *
-     * Possible state transitions:
+     * 可能的状态转移:
      * NEW -> COMPLETING -> NORMAL
      * NEW -> COMPLETING -> EXCEPTIONAL
      * NEW -> CANCELLED
@@ -99,12 +47,14 @@ public class FutureTask<V> implements RunnableFuture<V> {
     private static final int INTERRUPTED  = 6;
 
     /** The underlying callable; nulled out after running */
+    /* 内部的callable，运行后消失*/
     private Callable<V> callable;
-    /** The result to return or exception to throw from get() */
-    private Object outcome; // non-volatile, protected by state reads/writes
-    /** The thread running the callable; CASed during run() */
+    /** get方法的返回值或者它抛出的Exception */
+    private Object outcome; // 不是volatile的，通过状态的读写来保护
+    /** callable的执行线程; CASed during run() */
     private volatile Thread runner;
     /** Treiber stack of waiting threads */
+    /** Treiber stack是一个数据结构*/
     private volatile WaitNode waiters;
 
     /**
@@ -122,31 +72,19 @@ public class FutureTask<V> implements RunnableFuture<V> {
         throw new ExecutionException((Throwable)x);
     }
 
-    /**
-     * Creates a {@code FutureTask} that will, upon running, execute the
-     * given {@code Callable}.
-     *
-     * @param  callable the callable task
-     * @throws NullPointerException if the callable is null
-     */
+
     public FutureTask(Callable<V> callable) {
         if (callable == null)
             throw new NullPointerException();
         this.callable = callable;
-        this.state = NEW;       // ensure visibility of callable
+        this.state = NEW;       // state是volatile的，保证了可见性
     }
 
     /**
-     * Creates a {@code FutureTask} that will, upon running, execute the
-     * given {@code Runnable}, and arrange that {@code get} will return the
-     * given result on successful completion.
-     *
      * @param runnable the runnable task
-     * @param result the result to return on successful completion. If
-     * you don't need a particular result, consider using
-     * constructions of the form:
+     * @param result 如果你不需要一个特别的类型，考虑用下面的方式
      * {@code Future<?> f = new FutureTask<Void>(runnable, null)}
-     * @throws NullPointerException if the runnable is null
+     * @throws NullPointerException 如果runnable是null
      */
     public FutureTask(Runnable runnable, V result) {
         this.callable = Executors.callable(runnable, result);
@@ -162,6 +100,9 @@ public class FutureTask<V> implements RunnableFuture<V> {
     }
 
     public boolean cancel(boolean mayInterruptIfRunning) {
+        // 1. state为NEW
+        // 2. 尝试CAS将state替换为INTERRUPTING或者CANCELLED（根据mayInterruptIfRunning参数决定）
+        // 如果上两步任一失败则无法取消任务，返回false
         if (!(state == NEW &&
               UNSAFE.compareAndSwapInt(this, stateOffset, NEW,
                   mayInterruptIfRunning ? INTERRUPTING : CANCELLED)))
@@ -360,6 +301,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
     /**
      * Removes and signals all waiting threads, invokes done(), and
      * nulls out callable.
+     * 移除和通知所有等待线程，调用done方法，将callable置为null
      */
     private void finishCompletion() {
         // assert state > COMPLETING;

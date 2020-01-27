@@ -21,11 +21,11 @@ public class Object {
      * 返回哈希值，这个方法存在的意义就是支持哈希表
      * 一些通用性的协议：
      * 1. 在一个Java应用中对同一个Object多次调用该方法，如果equals方法中用到的
-     *    对象信息没有发生改变的话，那该方法也应该应该返回同一个Integer值
+     * 对象信息没有发生改变的话，那该方法也应该应该返回同一个Integer值
      * 2. 如果两个对象的equals方法判断相等，那么hashCode方法也要返回同一个Integer值
      * 3. 如果两个对象的equals方法不相等，其hashCode值不一定非要不相等，但是你要知道，
-     *    如果不相等的对象有不同的hashCode值的话，会提高哈希表的性能
-     *
+     * 如果不相等的对象有不同的hashCode值的话，会提高哈希表的性能
+     * <p>
      * 默认返回的是内存地址转换成的Integer，但是并不建议这样用
      */
     public native int hashCode();
