@@ -139,83 +139,57 @@ import sun.security.util.SecurityConstants;
  */
 public
 class Thread implements Runnable {
-    /* Make sure registerNatives is the first thing <clinit> does. */
+    /** 确保该方法是<clinit>方法做的第一件事情*/
     private static native void registerNatives();
     static {
         registerNatives();
     }
 
-    private volatile String name;
-    private int            priority;
+    private volatile String name;// 线程名
+    private int            priority;//优先级
     private Thread         threadQ;
     private long           eetop;
+    private boolean     single_step;    // 该线程是否是single_step的
+    private boolean     daemon = false;    // 是否是守护线程
+    private boolean     stillborn = false;    // JVM 状态
+    private Runnable target;    // 执行目标
+    private ThreadGroup group;    // 线程组
+    private ClassLoader contextClassLoader;// 该线程的上下文加载器
+    private AccessControlContext inheritedAccessControlContext;// 继承来的AccessControlContext
 
-    /* Whether or not to single_step this thread. */
-    private boolean     single_step;
-
-    /* Whether or not the thread is a daemon thread. */
-    private boolean     daemon = false;
-
-    /* JVM state */
-    private boolean     stillborn = false;
-
-    /* What will be run. */
-    private Runnable target;
-
-    /* The group of this thread */
-    private ThreadGroup group;
-
-    /* The context ClassLoader for this thread */
-    private ClassLoader contextClassLoader;
-
-    /* The inherited AccessControlContext of this thread */
-    private AccessControlContext inheritedAccessControlContext;
-
-    /* For autonumbering anonymous threads. */
-    private static int threadInitNumber;
+    // 匿名线程的自增用
     // 用作匿名线程的命名。Thread-11111这样的
     // 加了锁的，所以不会有线程安全问题。
+    private static int threadInitNumber;
     private static synchronized int nextThreadNum() {
         return threadInitNumber++;
     }
 
-    /* ThreadLocal values pertaining to this thread. This map is maintained
-     * by the ThreadLocal class. */
+    /**属于该线程的ThreadLocal值。该map由ThreadLocal类维护 */
     ThreadLocal.ThreadLocalMap threadLocals = null;
 
-    /*
-     * InheritableThreadLocal values pertaining to this thread. This map is
-     * maintained by the InheritableThreadLocal class.
-     */
+    /**InheritableThreadLocal。InheritableThreadLocal */
     ThreadLocal.ThreadLocalMap inheritableThreadLocals = null;
 
-    /*
-     * The requested stack size for this thread, or 0 if the creator did
-     * not specify a stack size.  It is up to the VM to do whatever it
-     * likes with this number; some VMs will ignore it.
-     */
-    private long stackSize;// 栈深。具体有什么作用还得看虚拟机，虚拟机可能并不会用到
+    /**栈深,默认0。具体有什么作用还得看虚拟机，虚拟机可能并不会用到*/
+    private long stackSize;
 
     /*
      * JVM-private state that persists after native thread termination.
      */
     private long nativeParkEventPointer;
 
-    /*
-     * Thread ID
-     */
+    /** 线程ID*/
     private long tid;
 
-    /* For generating thread ID */
+    /* 产生线程ID用 */
     private static long threadSeqNumber;
 
-    /* Java thread status for tools,
-     * initialized to indicate thread 'not yet started'
-     */
-
+    /*Java线程状态，初始化为0表示线程尚未调用start*/
     private volatile int threadStatus = 0;
 
 
+    /*同步方法，产生线程id*/
     private static synchronized long nextThreadID() {
         return ++threadSeqNumber;
     }
@@ -228,102 +202,52 @@ class Thread implements Runnable {
      */
     volatile Object parkBlocker;// 表示线程阻塞在哪个对象上
 
-    /* The object in which this thread is blocked in an interruptible I/O
-     * operation, if any.  The blocker's interrupt method should be invoked
-     * after setting this thread's interrupt status.
+
+    /**
+     * 线程在I/O操作中阻塞在哪个对象上。
+     * 当设置了线程的中断状态之后，需要调用blocker的中断方法。
      */
     private volatile Interruptible blocker;
     private final Object blockerLock = new Object();
 
-    /* Set the blocker field; invoked via sun.misc.SharedSecrets from java.nio code
-     */
+
+    /*设置blocker字段。在java.nio代码中经由sun.misc.SharedSecrets调用*/
     void blockedOn(Interruptible b) {
         synchronized (blockerLock) {
             blocker = b;
         }
     }
 
-    /**
-     * The minimum priority that a thread can have.
-     */
+
+    /** 优先级*/
     public final static int MIN_PRIORITY = 1;
-
-   /**
-     * The default priority that is assigned to a thread.
-     */
     public final static int NORM_PRIORITY = 5;
-
-    /**
-     * The maximum priority that a thread can have.
-     */
     public final static int MAX_PRIORITY = 10;
 
-    /**
-     * Returns a reference to the currently executing thread object.
-     *
-     * @return  the currently executing thread.
-     */
+    /** 返回当前线程的引用*/
     public static native Thread currentThread();
 
     /**
-     * A hint to the scheduler that the current thread is willing to yield
-     * its current use of a processor. The scheduler is free to ignore this
-     * hint.
+     * 提示调度器，当前线程可以暂时让出处理器的使用权。处理器可以忽略该提示
      *
-     * <p> Yield is a heuristic attempt to improve relative progression
-     * between threads that would otherwise over-utilise a CPU. Its use
-     * should be combined with detailed profiling and benchmarking to
-     * ensure that it actually has the desired effect.
+     * yield试图提升相关进程以避免它们过度使用CPU。该方法应该与详细的性能分析
+     * 和基准测试结合起来，确保其确实有意义。
      *
-     * <p> It is rarely appropriate to use this method. It may be useful
-     * for debugging or testing purposes, where it may help to reproduce
-     * bugs due to race conditions. It may also be useful when designing
-     * concurrency control constructs such as the ones in the
-     * {@link java.util.concurrent.locks} package.
+     * 很少有合适的场景去使用该方法。在测试或者debug的时候可能有点用，它可以帮你
+     * 重现由竞态条件产生的bug。在设计并发控制器的时候可能也有用，就像J.U.C的locks包里那样
      */
     public static native void yield();
 
     /**
-     * Causes the currently executing thread to sleep (temporarily cease
-     * execution) for the specified number of milliseconds, subject to
-     * the precision and accuracy of system timers and schedulers. The thread
-     * does not lose ownership of any monitors.
+     * 当前线程暂时停止执行，进入睡眠状态，持续x毫秒，受系统时间和调度器的时间的精确性影响
+     * 线程并不会释放monitor的所有权（不会释放锁）
      *
-     * @param  millis
-     *         the length of time to sleep in milliseconds
-     *
-     * @throws  IllegalArgumentException
-     *          if the value of {@code millis} is negative
+     * @throws  IllegalArgumentException 如果参数为负
      *
      * @throws  InterruptedException
-     *          if any thread has interrupted the current thread. The
-     *          <i>interrupted status</i> of the current thread is
-     *          cleared when this exception is thrown.
+     *          如果有线程中断了当前线程。该异常抛出的时候会清除线程的中断状态
      */
     public static native void sleep(long millis) throws InterruptedException;
-
-    /**
-     * Causes the currently executing thread to sleep (temporarily cease
-     * execution) for the specified number of milliseconds plus the specified
-     * number of nanoseconds, subject to the precision and accuracy of system
-     * timers and schedulers. The thread does not lose ownership of any
-     * monitors.
-     *
-     * @param  millis
-     *         the length of time to sleep in milliseconds
-     *
-     * @param  nanos
-     *         {@code 0-999999} additional nanoseconds to sleep
-     *
-     * @throws  IllegalArgumentException
-     *          if the value of {@code millis} is negative, or the value of
-     *          {@code nanos} is not in the range {@code 0-999999}
-     *
-     * @throws  InterruptedException
-     *          if any thread has interrupted the current thread. The
-     *          <i>interrupted status</i> of the current thread is
-     *          cleared when this exception is thrown.
-     */
     public static void sleep(long millis, int nanos)
     throws InterruptedException {
         if (millis < 0) {
@@ -342,28 +266,15 @@ class Thread implements Runnable {
         sleep(millis);
     }
 
-    /**
-     * Initializes a Thread with the current AccessControlContext.
-     * @see #init(ThreadGroup,Runnable,String,long,AccessControlContext,boolean)
-     */
+    /* 用当前的AccessControlContext初始化线程*/
     private void init(ThreadGroup g, Runnable target, String name,
                       long stackSize) {
         init(g, target, name, stackSize, null, true);
     }
+    public Thread() {
+        init(null, null, "Thread-" + nextThreadNum(), 0);
+    }
 
-    /**
-     * Initializes a Thread.
-     *
-     * @param g the Thread group
-     * @param target the object whose run() method gets called
-     * @param name the name of the new Thread
-     * @param stackSize the desired stack size for the new thread, or
-     *        zero to indicate that this parameter is to be ignored.
-     * @param acc the AccessControlContext to inherit, or
-     *            AccessController.getContext() if null
-     * @param inheritThreadLocals if {@code true}, inherit initial values for
-     *            inheritable thread-locals from the constructing thread
-     */
     private void init(ThreadGroup g, Runnable target, String name,
                       long stackSize, AccessControlContext acc,
                       boolean inheritThreadLocals) {
@@ -427,276 +338,50 @@ class Thread implements Runnable {
         tid = nextThreadID();
     }
 
-    /**
-     * Throws CloneNotSupportedException as a Thread can not be meaningfully
-     * cloned. Construct a new Thread instead.
-     *
-     * @throws  CloneNotSupportedException
-     *          always
-     */
+    /** 总是抛出CloneNotSupportedException，因为线程克隆是没有意义的。直接开一个新线程*/
     @Override
     protected Object clone() throws CloneNotSupportedException {
         throw new CloneNotSupportedException();
     }
 
-    /**
-     * Allocates a new {@code Thread} object. This constructor has the same
-     * effect as {@linkplain #Thread(ThreadGroup,Runnable,String) Thread}
-     * {@code (null, null, gname)}, where {@code gname} is a newly generated
-     * name. Automatically generated names are of the form
-     * {@code "Thread-"+}<i>n</i>, where <i>n</i> is an integer.
-     */
-    public Thread() {
-        init(null, null, "Thread-" + nextThreadNum(), 0);
-    }
-
-    /**
-     * Allocates a new {@code Thread} object. This constructor has the same
-     * effect as {@linkplain #Thread(ThreadGroup,Runnable,String) Thread}
-     * {@code (null, target, gname)}, where {@code gname} is a newly generated
-     * name. Automatically generated names are of the form
-     * {@code "Thread-"+}<i>n</i>, where <i>n</i> is an integer.
-     *
-     * @param  target
-     *         the object whose {@code run} method is invoked when this thread
-     *         is started. If {@code null}, this classes {@code run} method does
-     *         nothing.
-     */
     public Thread(Runnable target) {
         init(null, target, "Thread-" + nextThreadNum(), 0);
     }
 
-    /**
-     * Creates a new Thread that inherits the given AccessControlContext.
-     * This is not a public constructor.
-     */
     Thread(Runnable target, AccessControlContext acc) {
         init(null, target, "Thread-" + nextThreadNum(), 0, acc, false);
     }
 
-    /**
-     * Allocates a new {@code Thread} object. This constructor has the same
-     * effect as {@linkplain #Thread(ThreadGroup,Runnable,String) Thread}
-     * {@code (group, target, gname)} ,where {@code gname} is a newly generated
-     * name. Automatically generated names are of the form
-     * {@code "Thread-"+}<i>n</i>, where <i>n</i> is an integer.
-     *
-     * @param  group
-     *         the thread group. If {@code null} and there is a security
-     *         manager, the group is determined by {@linkplain
-     *         SecurityManager#getThreadGroup SecurityManager.getThreadGroup()}.
-     *         If there is not a security manager or {@code
-     *         SecurityManager.getThreadGroup()} returns {@code null}, the group
-     *         is set to the current thread's thread group.
-     *
-     * @param  target
-     *         the object whose {@code run} method is invoked when this thread
-     *         is started. If {@code null}, this thread's run method is invoked.
-     *
-     * @throws  SecurityException
-     *          if the current thread cannot create a thread in the specified
-     *          thread group
-     */
     public Thread(ThreadGroup group, Runnable target) {
         init(group, target, "Thread-" + nextThreadNum(), 0);
     }
 
-    /**
-     * Allocates a new {@code Thread} object. This constructor has the same
-     * effect as {@linkplain #Thread(ThreadGroup,Runnable,String) Thread}
-     * {@code (null, null, name)}.
-     *
-     * @param   name
-     *          the name of the new thread
-     */
     public Thread(String name) {
         init(null, null, name, 0);
     }
 
-    /**
-     * Allocates a new {@code Thread} object. This constructor has the same
-     * effect as {@linkplain #Thread(ThreadGroup,Runnable,String) Thread}
-     * {@code (group, null, name)}.
-     *
-     * @param  group
-     *         the thread group. If {@code null} and there is a security
-     *         manager, the group is determined by {@linkplain
-     *         SecurityManager#getThreadGroup SecurityManager.getThreadGroup()}.
-     *         If there is not a security manager or {@code
-     *         SecurityManager.getThreadGroup()} returns {@code null}, the group
-     *         is set to the current thread's thread group.
-     *
-     * @param  name
-     *         the name of the new thread
-     *
-     * @throws  SecurityException
-     *          if the current thread cannot create a thread in the specified
-     *          thread group
-     */
     public Thread(ThreadGroup group, String name) {
         init(group, null, name, 0);
     }
 
-    /**
-     * Allocates a new {@code Thread} object. This constructor has the same
-     * effect as {@linkplain #Thread(ThreadGroup,Runnable,String) Thread}
-     * {@code (null, target, name)}.
-     *
-     * @param  target
-     *         the object whose {@code run} method is invoked when this thread
-     *         is started. If {@code null}, this thread's run method is invoked.
-     *
-     * @param  name
-     *         the name of the new thread
-     */
     public Thread(Runnable target, String name) {
         init(null, target, name, 0);
     }
 
-    /**
-     * Allocates a new {@code Thread} object so that it has {@code target}
-     * as its run object, has the specified {@code name} as its name,
-     * and belongs to the thread group referred to by {@code group}.
-     *
-     * <p>If there is a security manager, its
-     * {@link SecurityManager#checkAccess(ThreadGroup) checkAccess}
-     * method is invoked with the ThreadGroup as its argument.
-     *
-     * <p>In addition, its {@code checkPermission} method is invoked with
-     * the {@code RuntimePermission("enableContextClassLoaderOverride")}
-     * permission when invoked directly or indirectly by the constructor
-     * of a subclass which overrides the {@code getContextClassLoader}
-     * or {@code setContextClassLoader} methods.
-     *
-     * <p>The priority of the newly created thread is set equal to the
-     * priority of the thread creating it, that is, the currently running
-     * thread. The method {@linkplain #setPriority setPriority} may be
-     * used to change the priority to a new value.
-     *
-     * <p>The newly created thread is initially marked as being a daemon
-     * thread if and only if the thread creating it is currently marked
-     * as a daemon thread. The method {@linkplain #setDaemon setDaemon}
-     * may be used to change whether or not a thread is a daemon.
-     *
-     * @param  group
-     *         the thread group. If {@code null} and there is a security
-     *         manager, the group is determined by {@linkplain
-     *         SecurityManager#getThreadGroup SecurityManager.getThreadGroup()}.
-     *         If there is not a security manager or {@code
-     *         SecurityManager.getThreadGroup()} returns {@code null}, the group
-     *         is set to the current thread's thread group.
-     *
-     * @param  target
-     *         the object whose {@code run} method is invoked when this thread
-     *         is started. If {@code null}, this thread's run method is invoked.
-     *
-     * @param  name
-     *         the name of the new thread
-     *
-     * @throws  SecurityException
-     *          if the current thread cannot create a thread in the specified
-     *          thread group or cannot override the context class loader methods.
-     */
     public Thread(ThreadGroup group, Runnable target, String name) {
         init(group, target, name, 0);
     }
 
-    /**
-     * Allocates a new {@code Thread} object so that it has {@code target}
-     * as its run object, has the specified {@code name} as its name,
-     * and belongs to the thread group referred to by {@code group}, and has
-     * the specified <i>stack size</i>.
-     *
-     * <p>This constructor is identical to {@link
-     * #Thread(ThreadGroup,Runnable,String)} with the exception of the fact
-     * that it allows the thread stack size to be specified.  The stack size
-     * is the approximate number of bytes of address space that the virtual
-     * machine is to allocate for this thread's stack.  <b>The effect of the
-     * {@code stackSize} parameter, if any, is highly platform dependent.</b>
-     *
-     * <p>On some platforms, specifying a higher value for the
-     * {@code stackSize} parameter may allow a thread to achieve greater
-     * recursion depth before throwing a {@link StackOverflowError}.
-     * Similarly, specifying a lower value may allow a greater number of
-     * threads to exist concurrently without throwing an {@link
-     * OutOfMemoryError} (or other internal error).  The details of
-     * the relationship between the value of the <tt>stackSize</tt> parameter
-     * and the maximum recursion depth and concurrency level are
-     * platform-dependent.  <b>On some platforms, the value of the
-     * {@code stackSize} parameter may have no effect whatsoever.</b>
-     *
-     * <p>The virtual machine is free to treat the {@code stackSize}
-     * parameter as a suggestion.  If the specified value is unreasonably low
-     * for the platform, the virtual machine may instead use some
-     * platform-specific minimum value; if the specified value is unreasonably
-     * high, the virtual machine may instead use some platform-specific
-     * maximum.  Likewise, the virtual machine is free to round the specified
-     * value up or down as it sees fit (or to ignore it completely).
-     *
-     * <p>Specifying a value of zero for the {@code stackSize} parameter will
-     * cause this constructor to behave exactly like the
-     * {@code Thread(ThreadGroup, Runnable, String)} constructor.
-     *
-     * <p><i>Due to the platform-dependent nature of the behavior of this
-     * constructor, extreme care should be exercised in its use.
-     * The thread stack size necessary to perform a given computation will
-     * likely vary from one JRE implementation to another.  In light of this
-     * variation, careful tuning of the stack size parameter may be required,
-     * and the tuning may need to be repeated for each JRE implementation on
-     * which an application is to run.</i>
-     *
-     * <p>Implementation note: Java platform implementers are encouraged to
-     * document their implementation's behavior with respect to the
-     * {@code stackSize} parameter.
-     *
-     *
-     * @param  group
-     *         the thread group. If {@code null} and there is a security
-     *         manager, the group is determined by {@linkplain
-     *         SecurityManager#getThreadGroup SecurityManager.getThreadGroup()}.
-     *         If there is not a security manager or {@code
-     *         SecurityManager.getThreadGroup()} returns {@code null}, the group
-     *         is set to the current thread's thread group.
-     *
-     * @param  target
-     *         the object whose {@code run} method is invoked when this thread
-     *         is started. If {@code null}, this thread's run method is invoked.
-     *
-     * @param  name
-     *         the name of the new thread
-     *
-     * @param  stackSize
-     *         the desired stack size for the new thread, or zero to indicate
-     *         that this parameter is to be ignored.
-     *
-     * @throws  SecurityException
-     *          if the current thread cannot create a thread in the specified
-     *          thread group
-     *
-     * @since 1.4
-     */
     public Thread(ThreadGroup group, Runnable target, String name,
                   long stackSize) {
         init(group, target, name, stackSize);
     }
 
     /**
-     * Causes this thread to begin execution; the Java Virtual Machine
-     * calls the <code>run</code> method of this thread.
-     * <p>
-     * The result is that two threads are running concurrently: the
-     * current thread (which returns from the call to the
-     * <code>start</code> method) and the other thread (which executes its
-     * <code>run</code> method).
-     * <p>
-     * It is never legal to start a thread more than once.
-     * In particular, a thread may not be restarted once it has completed
-     * execution.
-     *
-     * @exception  IllegalThreadStateException  if the thread was already
-     *               started.
-     * @see        #run()
-     * @see        #stop()
+     * 线程执行，JVM会调用run方法。
+     * 结果是导致两个线程并行：当前线程和新开的线程。
+     * 一个线程只能start一次，当一个线程执行完毕之后，不能再次被执行(IllegalThreadStateException)
+     * @exception  IllegalThreadStateException  如果线程已经调用过start
      */
     public synchronized void start() {
         /**
@@ -709,9 +394,7 @@ class Thread implements Runnable {
         if (threadStatus != 0)
             throw new IllegalThreadStateException();
 
-        /* Notify the group that this thread is about to be started
-         * so that it can be added to the group's list of threads
-         * and the group's unstarted count can be decremented. */
+        /* 通知线程组该线程准备start，线程组可以维护其线程列表，而且递减其unstart线程数*/
         group.add(this);
 
         boolean started = false;
@@ -732,18 +415,7 @@ class Thread implements Runnable {
 
     private native void start0();
 
-    /**
-     * If this thread was constructed using a separate
-     * <code>Runnable</code> run object, then that
-     * <code>Runnable</code> object's <code>run</code> method is called;
-     * otherwise, this method does nothing and returns.
-     * <p>
-     * Subclasses of <code>Thread</code> should override this method.
-     *
-     * @see     #start()
-     * @see     #stop()
-     * @see     #Thread(ThreadGroup, Runnable, String)
-     */
+    /*如果target是有效的，执行其run方法，否则什么也不做*/
     @Override
     public void run() {
         if (target != null) {
@@ -751,10 +423,7 @@ class Thread implements Runnable {
         }
     }
 
-    /**
-     * This method is called by the system to give a Thread
-     * a chance to clean up before it actually exits.
-     */
+    /*由系统调用，让线程在退出前清理状态*/
     private void exit() {
         if (group != null) {
             group.threadTerminated(this);
@@ -949,141 +618,39 @@ class Thread implements Runnable {
         return currentThread().isInterrupted(true);
     }
 
-    /**
-     * Tests whether this thread has been interrupted.  The <i>interrupted
-     * status</i> of the thread is unaffected by this method.
-     *
-     * <p>A thread interruption ignored because a thread was not alive
-     * at the time of the interrupt will be reflected by this method
-     * returning false.
-     *
-     * @return  <code>true</code> if this thread has been interrupted;
-     *          <code>false</code> otherwise.
-     * @see     #interrupted()
-     * @revised 6.0
+    /* 测试线程是否被中断，该方法不会影响线程的中断状态
+     * 如果线程中断发生时，线程已经死亡，由此导致了中断被忽略，那么该方法可以反映为返回false
+     * @return  true，如果线程被中断；false，其它
      */
     public boolean isInterrupted() {
         return isInterrupted(false);
     }
 
-    /**
-     * Tests if some Thread has been interrupted.  The interrupted state
-     * is reset or not based on the value of ClearInterrupted that is
-     * passed.
-     */
+    /*测试线程是否被中断，根据参数来决定是否修改线程的中断状态*/
     private native boolean isInterrupted(boolean ClearInterrupted);
 
-    /**
-     * Throws {@link NoSuchMethodError}.
-     *
-     * @deprecated This method was originally designed to destroy this
-     *     thread without any cleanup. Any monitors it held would have
-     *     remained locked. However, the method was never implemented.
-     *     If if were to be implemented, it would be deadlock-prone in
-     *     much the manner of {@link #suspend}. If the target thread held
-     *     a lock protecting a critical system resource when it was
-     *     destroyed, no thread could ever access this resource again.
-     *     If another thread ever attempted to lock this resource, deadlock
-     *     would result. Such deadlocks typically manifest themselves as
-     *     "frozen" processes. For more information, see
-     *     <a href="{@docRoot}/../technotes/guides/concurrency/threadPrimitiveDeprecation.html">
-     *     Why are Thread.stop, Thread.suspend and Thread.resume Deprecated?</a>.
-     * @throws NoSuchMethodError always
-     */
+    /*不做任何处理就退出，不会释放锁，所以没有实现的必要*/
     @Deprecated
     public void destroy() {
         throw new NoSuchMethodError();
     }
 
-    /**
-     * Tests if this thread is alive. A thread is alive if it has
-     * been started and has not yet died.
-     *
-     * @return  <code>true</code> if this thread is alive;
-     *          <code>false</code> otherwise.
-     */
+    /*如果线程已经start了，还没死就返回true，否则返回false*/
     public final native boolean isAlive();
 
-    /**
-     * Suspends this thread.
-     * <p>
-     * First, the <code>checkAccess</code> method of this thread is called
-     * with no arguments. This may result in throwing a
-     * <code>SecurityException </code>(in the current thread).
-     * <p>
-     * If the thread is alive, it is suspended and makes no further
-     * progress unless and until it is resumed.
-     *
-     * @exception  SecurityException  if the current thread cannot modify
-     *               this thread.
-     * @see #checkAccess
-     * @deprecated   This method has been deprecated, as it is
-     *   inherently deadlock-prone.  If the target thread holds a lock on the
-     *   monitor protecting a critical system resource when it is suspended, no
-     *   thread can access this resource until the target thread is resumed. If
-     *   the thread that would resume the target thread attempts to lock this
-     *   monitor prior to calling <code>resume</code>, deadlock results.  Such
-     *   deadlocks typically manifest themselves as "frozen" processes.
-     *   For more information, see
-     *   <a href="{@docRoot}/../technotes/guides/concurrency/threadPrimitiveDeprecation.html">Why
-     *   are Thread.stop, Thread.suspend and Thread.resume Deprecated?</a>.
-     */
+    /*停止线程，不释放锁*/
     @Deprecated
     public final void suspend() {
         checkAccess();
         suspend0();
     }
 
-    /**
-     * Resumes a suspended thread.
-     * <p>
-     * First, the <code>checkAccess</code> method of this thread is called
-     * with no arguments. This may result in throwing a
-     * <code>SecurityException</code> (in the current thread).
-     * <p>
-     * If the thread is alive but suspended, it is resumed and is
-     * permitted to make progress in its execution.
-     *
-     * @exception  SecurityException  if the current thread cannot modify this
-     *               thread.
-     * @see        #checkAccess
-     * @see        #suspend()
-     * @deprecated This method exists solely for use with {@link #suspend},
-     *     which has been deprecated because it is deadlock-prone.
-     *     For more information, see
-     *     <a href="{@docRoot}/../technotes/guides/concurrency/threadPrimitiveDeprecation.html">Why
-     *     are Thread.stop, Thread.suspend and Thread.resume Deprecated?</a>.
-     */
     @Deprecated
     public final void resume() {
         checkAccess();
         resume0();
     }
 
-    /**
-     * Changes the priority of this thread.
-     * <p>
-     * First the <code>checkAccess</code> method of this thread is called
-     * with no arguments. This may result in throwing a
-     * <code>SecurityException</code>.
-     * <p>
-     * Otherwise, the priority of this thread is set to the smaller of
-     * the specified <code>newPriority</code> and the maximum permitted
-     * priority of the thread's thread group.
-     *
-     * @param newPriority priority to set this thread to
-     * @exception  IllegalArgumentException  If the priority is not in the
-     *               range <code>MIN_PRIORITY</code> to
-     *               <code>MAX_PRIORITY</code>.
-     * @exception  SecurityException  if the current thread cannot modify
-     *               this thread.
-     * @see        #getPriority
-     * @see        #checkAccess()
-     * @see        #getThreadGroup()
-     * @see        #MAX_PRIORITY
-     * @see        #MIN_PRIORITY
-     * @see        ThreadGroup#getMaxPriority()
-     */
     public final void setPriority(int newPriority) {
         ThreadGroup g;
         checkAccess();
@@ -1098,30 +665,10 @@ class Thread implements Runnable {
         }
     }
 
-    /**
-     * Returns this thread's priority.
-     *
-     * @return  this thread's priority.
-     * @see     #setPriority
-     */
     public final int getPriority() {
         return priority;
     }
 
-    /**
-     * Changes the name of this thread to be equal to the argument
-     * <code>name</code>.
-     * <p>
-     * First the <code>checkAccess</code> method of this thread is called
-     * with no arguments. This may result in throwing a
-     * <code>SecurityException</code>.
-     *
-     * @param      name   the new name for this thread.
-     * @exception  SecurityException  if the current thread cannot modify this
-     *               thread.
-     * @see        #getName
-     * @see        #checkAccess()
-     */
     public final synchronized void setName(String name) {
         checkAccess();
         if (name == null) {
@@ -1134,23 +681,10 @@ class Thread implements Runnable {
         }
     }
 
-    /**
-     * Returns this thread's name.
-     *
-     * @return  this thread's name.
-     * @see     #setName(String)
-     */
     public final String getName() {
         return name;
     }
 
-    /**
-     * Returns the thread group to which this thread belongs.
-     * This method returns null if this thread has died
-     * (been stopped).
-     *
-     * @return  this thread's thread group.
-     */
     public final ThreadGroup getThreadGroup() {
         return group;
     }
