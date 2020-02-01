@@ -1,27 +1,3 @@
-/*
- * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
- * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- */
 
 package java.lang;
 
@@ -78,7 +54,6 @@ public final class StringBuilder
     implements java.io.Serializable, CharSequence
 {
 
-    /** use serialVersionUID for interoperability */
     static final long serialVersionUID = 4383685877147921099L;
 
     /**
