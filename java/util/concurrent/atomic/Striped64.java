@@ -46,12 +46,20 @@ import java.util.concurrent.ThreadLocalRandom;
 @SuppressWarnings("serial")
 abstract class Striped64 extends Number {
     /*
+     *
+     * 这个类维护了一个延时加载的表，该表存放自动更新的变量，与一个额外的“base”字段相加
+     * 这个表的大小是2^n,。索引用的是用掩码对每个线程的哈希值做处理
+     * 这个类里的声明基本上都是包私有的，供子类调用
      * This class maintains a lazily-initialized table of atomically
      * updated variables, plus an extra "base" field. The table size
      * is a power of two. Indexing uses masked per-thread hash codes.
      * Nearly all declarations in this class are package-private,
      * accessed directly by subclasses.
      *
+     * table的节点是Cell类，一个AtomicLong的改编版本构成的保护层被用来减少缓存竞争。
+     * 保护层对于绝大多数的原子类来说都是没什么用的，因为他们大都随机的分布在内存里，
+     * 所有彼此之间不会有太多的干涉。但是在数组里分配的原子类对象一般是地址连续的，所以，
+     * 如果没有预处理的话，它们经常会共享缓存行（这对性能有很坏的影响）
      * Table entries are of class Cell; a variant of AtomicLong padded
      * (via @sun.misc.Contended) to reduce cache contention. Padding
      * is overkill for most Atomics because they are usually
@@ -61,6 +69,11 @@ abstract class Striped64 extends Number {
      * often share cache lines (with a huge negative performance
      * impact) without this precaution.
      *
+     * 有部分原因是我们考虑到Cells是相对比较大的，所以我们对他们采用延时加载，
+     * 当不存在竞争时，所有的更新都会在base字段上操作。当发生第一次竞争时（在base
+     * 字段上的CAS执行失败），该表会初始化到大小为2,。表的大小在以后发生竞争的时候
+     * 会翻倍扩容，直到到达一个值，这个值是2^n，且这个值大于等于CPU数。
+     * 表的槽位保持空，直到它被用到。
      * In part because Cells are relatively large, we avoid creating
      * them until they are needed.  When there is no contention, all
      * updates are made to the base field.  Upon first contention (a
@@ -70,6 +83,9 @@ abstract class Striped64 extends Number {
      * number of CPUS. Table slots remain empty (null) until they are
      * needed.
      *
+     * 一个简单的自旋锁（cellsBusy）在初始化或表扩容的时候使用，以及在给新的Cell
+     * 分配槽位的时候使用。这里没必要用阻塞的锁。当锁不可获取时，线程尝试其他的槽位
+     * （或者base）。经过这些重试之后，争用增加，局部性降低，这仍比其他方法好。
      * A single spinlock ("cellsBusy") is used for initializing and
      * resizing the table, as well as populating slots with new Cells.
      * There is no need for a blocking lock; when the lock is not
@@ -77,6 +93,9 @@ abstract class Striped64 extends Number {
      * retries, there is increased contention and reduced locality,
      * which is still better than alternatives.
      *
+     * 线程的probe字段通过ThreadLocalRandom维护，用来作为每个线程的hash值。我们
+     * 让它们在未初始化的时候为0，直到它们在0号槽位发生争用。在这之后它们会被初始化，
+     * 初始化后的值通常彼此之间不会冲突。
      * The Thread probe fields maintained via ThreadLocalRandom serve
      * as per-thread hash codes. We let them remain uninitialized as
      * zero (if they come in this way) until they contend at slot

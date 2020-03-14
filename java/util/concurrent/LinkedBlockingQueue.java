@@ -274,7 +274,9 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      *         of its elements are null
      */
     public LinkedBlockingQueue(Collection<? extends E> c) {
+        // 注意，这里一样把容量设置成了最大值
         this(Integer.MAX_VALUE);
+        // 内部是有两把锁的，Deque是一把
         final ReentrantLock putLock = this.putLock;
         putLock.lock(); // Never contended, but necessary for visibility
         try {
@@ -328,7 +330,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      * @throws InterruptedException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
      */
-    public void put(E e) throws InterruptedException {
+    public void put(E e) throws InterruptedException { // 不允许添加null
         if (e == null) throw new NullPointerException();
         // Note: convention in all put/take/etc is to preset local var
         // holding count negative to indicate failure unless set.
@@ -373,6 +375,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         throws InterruptedException {
 
         if (e == null) throw new NullPointerException();
+        // 一般这些超时操作都会转化成纳秒的单位
         long nanos = unit.toNanos(timeout);
         int c = -1;
         final ReentrantLock putLock = this.putLock;
@@ -545,6 +548,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      */
     public boolean remove(Object o) {
         if (o == null) return false;
+        // 为什么需要fullyLock？因为下面的逻辑需要遍历做等值判断
         fullyLock();
         try {
             for (Node<E> trail = head, p = trail.next;
@@ -571,6 +575,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      */
     public boolean contains(Object o) {
         if (o == null) return false;
+        // 和remove一样需要全锁
         fullyLock();
         try {
             for (Node<E> p = head.next; p != null; p = p.next)
@@ -811,7 +816,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         private Node<E> nextNode(Node<E> p) {
             for (;;) {
                 Node<E> s = p.next;
-                if (s == p)
+                if (s == p)// p已经成为了出队的头结点
                     return head.next;
                 if (s == null || s.item != null)
                     return s;

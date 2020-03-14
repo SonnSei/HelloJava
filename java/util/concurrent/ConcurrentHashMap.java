@@ -270,7 +270,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
 
     /*
      * Overview:
-     *
+     * 设计的主要目的是在最小化更新竞争的前提下保持并发可读性（主要针对get()方法
+     * 但是也包括迭代器和其他的一些相关方法）。第二个目标是让空间利用率与hashMap
+     * 相同或者更好，并且通过多线程来支持高初始插入率
      * The primary design goal of this hash table is to maintain
      * concurrent readability (typically method get(), but also
      * iterators and related methods) while minimizing update
@@ -1009,21 +1011,26 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /** Implementation for put and putIfAbsent */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
+        // 获取哈希值，综合考虑高位和低位，避免只高位变化引起的哈希冲突
         int hash = spread(key.hashCode());
         int binCount = 0;
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
+            // 如果哈希表为空，则初始化
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
+            // 如果槽位为空，则CAS尝试放置元素
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
             }
+            // 如果槽位头结点的哈希值为-1，表示正在进行rehash
             else if ((fh = f.hash) == MOVED)
                 tab = helpTransfer(tab, f);
             else {
                 V oldVal = null;
+                // 锁住头结点
                 synchronized (f) {
                     if (tabAt(tab, i) == f) {
                         if (fh >= 0) {
@@ -2010,6 +2017,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                         }
+                        // -2代表的是红黑树的根节点
                         else if (f instanceof TreeBin) {
                             binCount = 2;
                             TreeBin<K,V> t = (TreeBin<K,V>)f;

@@ -289,27 +289,36 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
     private void tryGrow(Object[] array, int oldCap) {
         lock.unlock(); // must release and then re-acquire main lock
         Object[] newArray = null;
+        // 扩容时候需要获取自旋锁，如果获取失败，表示别的线程已经在执行扩容了，当前线程就不需要再扩容了
         if (allocationSpinLock == 0 &&
             UNSAFE.compareAndSwapInt(this, allocationSpinLockOffset,
                                      0, 1)) {
             try {
+                // 当容量小于64的时候，近似翻倍扩容，否则扩容一半
                 int newCap = oldCap + ((oldCap < 64) ?
                                        (oldCap + 2) : // grow faster if small
                                        (oldCap >> 1));
+                // 当按照150%扩容后超出了容量限制，尝试只添加一个元素，如果依然超出限制，就OOM，
+                // 否则就将容量扩展为最大容量
                 if (newCap - MAX_ARRAY_SIZE > 0) {    // possible overflow
                     int minCap = oldCap + 1;
                     if (minCap < 0 || minCap > MAX_ARRAY_SIZE)
                         throw new OutOfMemoryError();
                     newCap = MAX_ARRAY_SIZE;
                 }
+                // queue==array 这个判断有什么用？
+                // 是有可能两个线程进入扩容流程的，queue==array的时候表示队列的数据存储地址没改，
+                // 也就是尚未完成扩容，此时newArray就是新的数据存储地址
                 if (newCap > oldCap && queue == array)
                     newArray = new Object[newCap];
             } finally {
                 allocationSpinLock = 0;
             }
         }
+
         if (newArray == null) // back off if another thread is allocating
             Thread.yield();
+        // 确保只有一个线程执行更改数据存储地址的操作，并且只有获取了mainLock之后才能继续原来方法中的逻辑
         lock.lock();
         if (newArray != null && queue == array) {
             queue = newArray;
@@ -482,6 +491,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         lock.lock();
         int n, cap;
         Object[] array;
+        // cap表示当前容量
         while ((n = size) >= (cap = (array = queue).length))
             tryGrow(array, cap);
         try {
@@ -568,6 +578,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         return result;
     }
 
+    // 优先队列的peek就是看0号元素（如果有）
     public E peek() {
         final ReentrantLock lock = this.lock;
         lock.lock();
@@ -781,6 +792,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         try {
             int n = Math.min(size, maxElements);
             for (int i = 0; i < n; i++) {
+                // 所以放入集合中的元素是有序的
                 c.add((E) queue[0]); // In this order, in case add() throws.
                 dequeue();
             }
@@ -801,6 +813,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             Object[] array = queue;
             int n = size;
             size = 0;
+            // 这是一个O(n)的操作，而且，只是移动了指针，删除了元素，但是数组还是之前的数组
             for (int i = 0; i < n; i++)
                 array[i] = null;
         } finally {
@@ -891,6 +904,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             return cursor < array.length;
         }
 
+        // 迭代顺序是数组顺序，并不一定是有序的
         public E next() {
             if (cursor >= array.length)
                 throw new NoSuchElementException();
